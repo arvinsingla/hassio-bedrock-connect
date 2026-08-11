@@ -1,0 +1,15 @@
+# https://developers.home-assistant.io/docs/add-ons/configuration#add-on-extended-build
+# Eclipse Temurin publishes multi-arch manifests, so both architectures use the
+# same tag; the builder selects the right platform.
+build_from:
+  aarch64: "eclipse-temurin:17-jre"
+  amd64: "eclipse-temurin:17-jre"
+# The Dockerfile defaults to the latest BedrockConnect release. Uncomment to
+# pin a specific upstream tag, e.g. if a release turns out to be broken.
+# args:
+#   BEDROCK_CONNECT_VERSION: "1.69.0"
+labels:
+  org.opencontainers.image.title: "BedrockConnect Add-on"
+  org.opencontainers.image.description: "BedrockConnect for Home Assistant"
+  org.opencontainers.image.source: "https://github.com/arvinsingla/hassio-bedrock-connect"
+  org.opencontainers.image.licenses: "Apache-2.0"

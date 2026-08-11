@@ -2,7 +2,7 @@ name: Builder
 
 env:
   BUILD_ARGS: "--test"
-  MONITORED_FILES: "build.yaml config.yaml Dockerfile rootfs"
+  MONITORED_FILES: "build.yaml config.yaml Dockerfile start.sh"
 
 on:
   push:
@@ -11,6 +11,9 @@ on:
   pull_request:
     branches:
       - main
+  # Dispatched by the Upstream update workflow, since a push made with
+  # GITHUB_TOKEN does not trigger the push event above.
+  workflow_dispatch:
 
 jobs:
   init:
@@ -25,6 +28,7 @@ jobs:
 
       - name: Get changed files
         id: changed_files
+        if: github.event_name != 'workflow_dispatch'
         uses: jitterbit/get-changed-files@v1
 
       - name: Find add-on directories
@@ -34,6 +38,14 @@ jobs:
       - name: Get changed add-ons
         id: changed_addons
         run: |
+          # A manual/dispatched run has no diff to inspect, so build everything.
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "Dispatched run, building all add-ons";
+            echo "changed=true" >> $GITHUB_OUTPUT;
+            echo 'addons=${{ steps.addons.outputs.addons_list }}' >> $GITHUB_OUTPUT;
+            exit 0;
+          fi
+
           declare -a changed_addons
           for addon in ${{ steps.addons.outputs.addons }}; do
             if [[ "${{ steps.changed_files.outputs.all }}" =~ $addon ]]; then
@@ -64,7 +76,7 @@ jobs:
     strategy:
       matrix:
         addon: ${{ fromJson(needs.init.outputs.changed_addons) }}
-        arch: ["aarch64", "amd64", "armhf", "armv7", "i386"]
+        arch: ["aarch64", "amd64"]
     permissions:
       contents: read
       packages: write
@@ -88,7 +100,7 @@ jobs:
           elif [[ "${{ steps.info.outputs.architectures }}" =~ ${{ matrix.arch }} ]]; then
             echo "build_arch=true" >> $GITHUB_OUTPUT;
             echo "image=$(echo ${{ steps.info.outputs.image }} | cut -d'/' -f3)" >> $GITHUB_OUTPUT;
-            if [[ -z "${{ github.head_ref }}" ]] && [[ "${{ github.event_name }}" == "push" ]]; then
+            if [[ -z "${{ github.head_ref }}" ]] && [[ "${{ github.event_name }}" != "pull_request" ]]; then
                 echo "BUILD_ARGS=" >> $GITHUB_ENV;
             fi
           else

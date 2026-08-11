@@ -1,9 +1,4 @@
 # https://developers.home-assistant.io/docs/add-ons/repository#repository-configuration
-name: 'Bedrock connect addon for Home Assistant'
-url: 'https://github.com/patrikulus/hassio-bedrock-connect'
-maintainer: 'https://github.com/patrikulus'
-arch:
-  - aarch64
-  - amd64
-  - armv7
-slug: 'bedrockconnect'
+name: 'BedrockConnect add-on for Home Assistant'
+url: 'https://github.com/arvinsingla/hassio-bedrock-connect'
+maintainer: 'Arvin Singla <arvin.singla@gmail.com>'

@@ -1,0 +1,121 @@
+name: Upstream update
+
+# Watches Pugmatt/BedrockConnect for new releases. When one appears, bumps the
+# add-on version so Home Assistant offers the update to existing installs,
+# records the upstream version, writes a changelog entry, and kicks off a build.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  update:
+    name: Check for a new BedrockConnect release
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⤵️ Check out code from GitHub
+        uses: actions/checkout@v4.2.1
+
+      - name: 🔍 Compare upstream release with what we ship
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          release=$(gh api repos/Pugmatt/BedrockConnect/releases/latest)
+          latest=$(jq -r '.tag_name' <<< "${release}")
+          current=$(tr -d '[:space:]' < bedrockconnect/UPSTREAM_VERSION)
+
+          if [[ -z "${latest}" || "${latest}" == "null" ]]; then
+            echo "::error::Could not determine the latest upstream release"
+            exit 1
+          fi
+
+          # Don't bump for a release that has no jar to download.
+          if ! jq -e '.assets[] | select(.name == "BedrockConnect-1.0-SNAPSHOT.jar")' <<< "${release}" > /dev/null; then
+            echo "::warning::Release ${latest} has no BedrockConnect-1.0-SNAPSHOT.jar asset, skipping"
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          echo "latest=${latest}" >> "${GITHUB_OUTPUT}"
+          echo "notes=$(jq -r '.body // "" | split("\n")[0]' <<< "${release}")" >> "${GITHUB_OUTPUT}"
+
+          if [[ "${latest}" == "${current}" ]]; then
+            echo "Already shipping BedrockConnect ${latest}, nothing to do"
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "Upstream moved from ${current} to ${latest}"
+            echo "changed=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: ⬆️ Bump the add-on version and changelog
+        if: steps.check.outputs.changed == 'true'
+        id: bump
+        env:
+          LATEST: ${{ steps.check.outputs.latest }}
+          NOTES: ${{ steps.check.outputs.notes }}
+        run: |
+          set -euo pipefail
+
+          current_version=$(sed -nE 's/^version:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/p' bedrockconnect/config.yaml)
+          next_version=$(python3 - "${current_version}" <<'PY'
+          import sys
+          parts = sys.argv[1].split(".")
+          parts[-1] = str(int(parts[-1]) + 1)
+          print(".".join(parts))
+          PY
+          )
+
+          sed -i -E "s|^version:.*|version: \"${next_version}\"|" bedrockconnect/config.yaml
+          echo "${LATEST}" > bedrockconnect/UPSTREAM_VERSION
+
+          python3 - "${next_version}" "${LATEST}" "${NOTES}" <<'PY'
+          import sys
+
+          version, upstream, notes = sys.argv[1], sys.argv[2], sys.argv[3].strip()
+          path = "bedrockconnect/CHANGELOG.md"
+
+          entry = f"## {version}\n\n- Update BedrockConnect to {upstream}."
+          if notes:
+              entry += f" {notes.lstrip('- ').strip().rstrip('.')}."
+          entry += "\n"
+
+          with open(path) as fh:
+              content = fh.read()
+
+          heading = "# Changelog\n"
+          head, _, rest = content.partition(heading)
+          with open(path, "w") as fh:
+              fh.write(f"{head}{heading}\n{entry}\n{rest.lstrip()}")
+          PY
+
+          echo "version=${next_version}" >> "${GITHUB_OUTPUT}"
+
+      - name: 📦 Commit and push
+        if: steps.check.outputs.changed == 'true'
+        env:
+          LATEST: ${{ steps.check.outputs.latest }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bedrockconnect/config.yaml bedrockconnect/UPSTREAM_VERSION bedrockconnect/CHANGELOG.md
+          git commit -m "Update BedrockConnect to ${LATEST} (add-on ${VERSION})"
+          git push
+
+      # A push made with GITHUB_TOKEN does not trigger the Builder workflow's
+      # push event, so dispatch it explicitly.
+      - name: 🚀 Trigger a build
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run builder.yaml --ref "${GITHUB_REF_NAME}"

@@ -1,24 +1,27 @@
 name: "BedrockConnect Add-on"
-version: "1.51.4"
+version: "2.0.0"
 slug: "bedrockconnect"
-description: "A Home Assistant add-on for BedrockConnect"
+description: "Run BedrockConnect so consoles can join custom Minecraft Bedrock servers"
+url: "https://github.com/arvinsingla/hassio-bedrock-connect"
+image: "ghcr.io/arvinsingla/{arch}-addon-bedrockconnect"
 arch:
   - aarch64
   - amd64
 startup: "services"
 boot: "auto"
+init: true
 options:
   servers: []
 schema:
   servers:
     - name: str
-      iconUrl: str
       address: str
-      port: int
-map:
-  - config:rw
+      port: port
+      iconUrl: str?
 ports:
   "19132/udp": 19132
-init: true
+ports_description:
+  "19132/udp": "Minecraft Bedrock port consoles connect to"
 environment:
   BC_CUSTOM_SERVERS: "/data/bedrock_servers.json"
+  BC_DB_TYPE: "none"
